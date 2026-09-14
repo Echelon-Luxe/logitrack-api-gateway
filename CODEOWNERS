@@ -2,9 +2,9 @@
 # On staging and production branches this is ENFORCED via
 # require_code_owner_reviews, so this file is a real gate, not documentation.
 
-*                       @dollarsmoney
+*                       @dollarsmoney @paullmic279-afk
 
 # Delivery machinery gets stricter treatment than application code:
 # a broken workflow silently disables every security gate downstream.
-/.github/workflows/     @dollarsmoney
-/Dockerfile             @dollarsmoney
+/.github/workflows/     @dollarsmoney @paullmic279-afk
+/Dockerfile             @dollarsmoney @paullmic279-afk
