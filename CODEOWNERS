@@ -1,0 +1,10 @@
+# Every file requires review from the repo owner by default.
+# On staging and production branches this is ENFORCED via
+# require_code_owner_reviews, so this file is a real gate, not documentation.
+
+*                       @dollarsmoney
+
+# Delivery machinery gets stricter treatment than application code:
+# a broken workflow silently disables every security gate downstream.
+/.github/workflows/     @dollarsmoney
+/Dockerfile             @dollarsmoney
