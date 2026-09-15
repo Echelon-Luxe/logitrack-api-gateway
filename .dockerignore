@@ -6,7 +6,9 @@ test
 .github
 .env
 .env.*
+!.env.example
 *.md
 !README.md
 .vscode
 .idea
+src/generated
