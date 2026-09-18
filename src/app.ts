@@ -85,7 +85,13 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
 
     const started = process.hrtime.bigint();
-    void reply.from(`${rule.target}${req.url}`, {
+    // /api is the gateway's public namespace, not the backends'. They register
+    // bare paths - /auth/register, /shipments - so forwarding req.url verbatim
+    // handed them /api/auth/register and every proxied request 404'd upstream.
+    // The query string rides along; only the prefix is removed.
+    const upstreamUrl = req.url.replace(/^\/api(?=\/|\?|$)/, '') || '/';
+
+    void reply.from(`${rule.target}${upstreamUrl}`, {
       rewriteRequestHeaders: (_orig, existing) => {
         // Strip Authorization: backends must trust the gateway's verdict, not
         // re-verify, and forwarding the token widens where it can leak.

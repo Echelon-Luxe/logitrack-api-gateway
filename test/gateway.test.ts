@@ -9,6 +9,7 @@ let privateKey: CryptoKey;
 let authPort = 0;
 let backendPort = 0;
 let received: Record<string, string> = {};
+let receivedUrl = '';
 
 beforeAll(async () => {
   const pair = await generateKeyPair('RS256', { extractable: true });
@@ -25,6 +26,9 @@ beforeAll(async () => {
   backend = Fastify();
   backend.all('/*', async (req) => {
     received = req.headers as Record<string, string>;
+    // reply.from does not surface the upstream body through inject, so the path
+    // has to be captured here rather than asserted on the response.
+    receivedUrl = req.url;
     return { ok: true, path: req.url };
   });
   await backend.listen({ port: 0, host: '127.0.0.1' });
@@ -69,6 +73,42 @@ describe('gateway auth and proxying', () => {
     expect(res.statusCode).toBe(200);
     expect(received['x-user-id']).toBe('user-1');
     expect(received['x-user-role']).toBe('CUSTOMER');
+    await app.close();
+  });
+
+  // The gateway's /api namespace is not the backends'. They register bare paths,
+  // so leaving the prefix on made every proxied request 404 upstream - invisible
+  // here until a test asserted the path the backend actually received.
+  it('strips the /api prefix before proxying', async () => {
+    const app = await makeGateway();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/shipments',
+      headers: { authorization: `Bearer ${await token()}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(receivedUrl).toBe('/shipments');
+    await app.close();
+  });
+
+  it('keeps the query string when stripping the prefix', async () => {
+    const app = await makeGateway();
+    await app.inject({
+      method: 'GET',
+      url: '/api/shipments?status=IN_TRANSIT&limit=10',
+      headers: { authorization: `Bearer ${await token()}` },
+    });
+    expect(receivedUrl).toBe('/shipments?status=IN_TRANSIT&limit=10');
+    await app.close();
+  });
+
+  // The route that sent us looking: register is public, so it reaches the
+  // backend and the 404 was the backend's, not the gateway's.
+  it('proxies a public auth route to its bare path', async () => {
+    const app = await makeGateway();
+    const res = await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email: 'a@b.c' } });
+    expect(res.statusCode).toBe(200);
+    expect(receivedUrl).toBe('/auth/register');
     await app.close();
   });
 
