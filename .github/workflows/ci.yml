@@ -144,3 +144,16 @@ jobs:
       - name: Push image
         if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         run: docker push ${{ steps.ref.outputs.image }}:${{ steps.ref.outputs.tag }}
+
+      # Hand the SHA to the infrastructure repository, which decides what runs
+      # where. This repo never holds cluster credentials - only the right to say
+      # "this image exists".
+      #
+      # GITHUB_TOKEN cannot dispatch across repositories, so this needs a PAT with
+      # `repo` scope on logitrack-infrastructure, stored as INFRA_DISPATCH_TOKEN.
+      - name: Trigger deploy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        env:
+          GH_TOKEN: ${{ secrets.INFRA_DISPATCH_TOKEN }}
+        run: |
+          gh api repos/Echelon-Luxe/logitrack-infrastructure/dispatches -f event_type=deploy -F 'client_payload[service]=api-gateway' -F 'client_payload[image_tag]=${{ steps.ref.outputs.tag }}'
