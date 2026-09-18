@@ -104,7 +104,12 @@ export async function buildApp(): Promise<FastifyInstance> {
           { upstream: rule.prefix, status: String(upstream.statusCode) },
           seconds,
         );
-        void proxyReply.send(upstream);
+        // .stream, not the whole object: supplying onResponse takes over from
+        // reply-from's default `this.send(res.stream)`, and sending `res` makes
+        // Fastify serialise {statusCode, headers, stream} as the body. The
+        // status still looks right - reply-from applied it before calling this
+        // - so every response arrives with a correct code and a useless body.
+        void proxyReply.send(upstream.stream);
       },
     });
     // Return the reply, not the result of from(): returning a value from an
