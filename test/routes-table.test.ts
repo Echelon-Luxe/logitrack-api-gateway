@@ -50,4 +50,14 @@ describe('route matching', () => {
     const authed = ROUTES.filter((r) => r.prefix !== '/api/payments/webhook');
     expect(new Set(authed.map((r) => r.target)).size).toBe(6);
   });
+
+  it('routes earnings to payment-service, which owns money', () => {
+    expect(matchRoute('/api/earnings/driver/driver-1')?.target).toContain('payment-service');
+  });
+
+  // /api/payments/webhook is public and must keep winning over /api/payments.
+  it('keeps the webhook public even with another payment-service prefix added', () => {
+    expect(matchRoute('/api/payments/webhook')?.roles).toBe('public');
+    expect(matchRoute('/api/earnings')?.roles).toEqual([]);
+  });
 });

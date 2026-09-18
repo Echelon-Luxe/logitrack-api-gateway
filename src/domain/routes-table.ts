@@ -22,6 +22,9 @@ export const ROUTES: readonly RouteRule[] = [
   { prefix: '/api/drivers', target: svc('driver-service', 3003), roles: [] },
   { prefix: '/api/tracking', target: svc('tracking-service', 3004), roles: [] },
   { prefix: '/api/notifications', target: svc('notification-service', 3005), roles: [] },
+  // Earnings live in payment-service: it owns money, and the amount is derived
+  // from the customer's payment for the shipment.
+  { prefix: '/api/earnings', target: svc('payment-service', 3006), roles: [] },
   { prefix: '/api/payments', target: svc('payment-service', 3006), roles: [] },
 ];
 
