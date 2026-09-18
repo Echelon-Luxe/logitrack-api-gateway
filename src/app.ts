@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import replyFrom from '@fastify/reply-from';
+import { buildLogger } from './logging.js';
 import { registry, httpRequests, proxyLatency, authFailures, rateLimited } from './metrics.js';
 import { verifyToken, requireRole, jwksReady, UnauthorizedError, ForbiddenError } from './domain/verify.js';
 import { matchRoute } from './domain/routes-table.js';
@@ -13,13 +14,12 @@ export const setReady = (v: boolean): void => { ready = v; };
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: {
-      level: process.env['LOG_LEVEL'] ?? 'info',
+    loggerInstance: buildLogger(SERVICE_NAME, {
       redact: {
         paths: ['req.headers.authorization', 'req.headers.cookie'],
         censor: '[redacted]',
       },
-    },
+    }),
     // Required for rate limiting to see the real client IP rather than the
     // ingress controller's.
     trustProxy: true,

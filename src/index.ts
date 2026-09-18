@@ -1,4 +1,5 @@
 import { buildApp, setReady, SERVICE_NAME } from './app.js';
+import { closeLogger } from './logging.js';
 import { initJwks } from './domain/verify.js';
 
 const PORT = Number(process.env['PORT'] ?? 8080);
@@ -20,7 +21,12 @@ async function main(): Promise<void> {
       // Fail readiness before closing so the pod leaves Service endpoints
       // first. This matters most here: the gateway takes all external traffic.
       setReady(false);
-      void app.close().then(() => process.exit(0));
+      void (async () => {
+        await app.close();
+        // Last: flush what Seq is still batching before the process goes.
+        await closeLogger();
+        process.exit(0);
+      })();
     });
   }
 }
