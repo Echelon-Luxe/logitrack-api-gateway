@@ -76,6 +76,20 @@ describe('gateway auth and proxying', () => {
     await app.close();
   });
 
+  // A proxied response has to carry the upstream's body. Asserting only the
+  // status hid a gateway that returned reply-from's internal
+  // {statusCode, headers, stream} object for every single request.
+  it('returns the upstream body, not the proxy envelope', async () => {
+    const app = await makeGateway();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/shipments',
+      headers: { authorization: `Bearer ${await token()}` },
+    });
+    expect(res.json()).toEqual({ ok: true, path: '/shipments' });
+    await app.close();
+  });
+
   // The gateway's /api namespace is not the backends'. They register bare paths,
   // so leaving the prefix on made every proxied request 404 upstream - invisible
   // here until a test asserted the path the backend actually received.
