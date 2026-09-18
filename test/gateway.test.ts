@@ -93,7 +93,7 @@ describe('gateway auth and proxying', () => {
 
   it('keeps the query string when stripping the prefix', async () => {
     const app = await makeGateway();
-    const res = await app.inject({
+    await app.inject({
       method: 'GET',
       url: '/api/shipments?status=IN_TRANSIT&limit=10',
       headers: { authorization: `Bearer ${await token()}` },
