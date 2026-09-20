@@ -1,0 +1,47 @@
+name: Slack PR alerts
+
+# Runs on the pull_request event (not pull_request_target), so fork PRs get no
+# secrets and are silently skipped.
+on:
+  pull_request:
+    types: [opened, reopened, closed]
+    branches: [dev, staging, production]
+
+permissions: {}
+
+jobs:
+  notify:
+    name: slack alert
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ACTION: ${{ github.event.action }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_HEAD: ${{ github.event.pull_request.head.ref }}
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          [ -n "${SLACK_WEBHOOK_URL:-}" ] || { echo "No Slack webhook configured; skipping."; exit 0; }
+
+          esc() { sed -e 's/\\/\\\\/g' -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+
+          case "${ACTION}" in
+            opened)   emoji=":twisted_rightwards_arrows:"; verb="opened" ;;
+            reopened) emoji=":twisted_rightwards_arrows:"; verb="reopened" ;;
+            closed)
+              if [ "${MERGED}" = "true" ]; then emoji=":white_check_mark:"; verb="merged"
+              else emoji=":no_entry_sign:"; verb="closed without merging"; fi ;;
+            *) exit 0 ;;
+          esac
+
+          text="${emoji} *PR ${verb}* in \`${GITHUB_REPOSITORY}\`\n<${PR_URL}|#${PR_NUMBER} $(printf '%s' "${PR_TITLE}" | esc)>\n\`$(printf '%s' "${PR_HEAD}" | esc)\` -> \`$(printf '%s' "${PR_BASE}" | esc)\` by ${PR_AUTHOR}"
+
+          jq -n --arg text "$(printf '%b' "${text}")" '{text: $text}' \
+            | curl -sS -f -X POST -H 'Content-type: application/json' --data @- "${SLACK_WEBHOOK_URL}" \
+            || echo "::warning::Slack notification failed"
