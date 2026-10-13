@@ -42,8 +42,26 @@ describe('route matching', () => {
     expect(matchRoute('/api/auth/login')?.roles).toBe('public');
   });
 
-  it('restricts user administration to ADMIN', () => {
-    expect(matchRoute('/api/users')?.roles).toEqual(['ADMIN']);
+  it('lets staff read users but only ADMIN change them', () => {
+    expect(matchRoute('/api/users', 'GET')?.roles).toEqual(['ADMIN', 'DISPATCHER', 'SUPPORT']);
+    expect(matchRoute('/api/users', 'POST')?.roles).toEqual(['ADMIN']);
+    expect(matchRoute('/api/users/abc', 'PATCH')?.roles).toEqual(['ADMIN']);
+  });
+
+  // /auth/me acts on the caller, so it needs the identity the gateway derives
+  // from the token - the public /api/auth rule would never set one.
+  it('requires a token for the caller-scoped auth routes', () => {
+    expect(matchRoute('/api/auth/me')?.roles).toEqual([]);
+    expect(matchRoute('/api/auth/me', 'PATCH')?.roles).toEqual([]);
+    expect(matchRoute('/api/auth/change-password', 'POST')?.roles).toEqual([]);
+    expect(matchRoute('/api/auth/login', 'POST')?.roles).toBe('public');
+  });
+
+  it('keeps dead-letter queues and the audit log ADMIN-only', () => {
+    expect(matchRoute('/api/tracking/dead-letters')?.roles).toEqual(['ADMIN']);
+    expect(matchRoute('/api/notifications/dead-letters')?.roles).toEqual(['ADMIN']);
+    expect(matchRoute('/api/audit')?.roles).toEqual(['ADMIN']);
+    expect(matchRoute('/api/tracking/abc')?.roles).toEqual([]);
   });
 
   it('routes every prefix to a distinct backend', () => {
@@ -58,6 +76,6 @@ describe('route matching', () => {
   // /api/payments/webhook is public and must keep winning over /api/payments.
   it('keeps the webhook public even with another payment-service prefix added', () => {
     expect(matchRoute('/api/payments/webhook')?.roles).toBe('public');
-    expect(matchRoute('/api/earnings')?.roles).toEqual([]);
+    expect(matchRoute('/api/earnings')?.roles).toEqual(['ADMIN', 'SUPPORT', 'DRIVER']);
   });
 });

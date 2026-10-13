@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
+import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import replyFrom from '@fastify/reply-from';
 import { buildLogger } from './logging.js';
@@ -8,6 +9,9 @@ import { verifyToken, requireRole, jwksReady, UnauthorizedError, ForbiddenError 
 import { matchRoute } from './domain/routes-table.js';
 
 export const SERVICE_NAME = 'logitrack-api-gateway';
+
+const isCredentialRoute = (method: string, url: string): boolean =>
+  method === 'POST' && /^\/api\/auth\/(login|register|refresh)(\?|$)/.test(url);
 
 let ready = false;
 export const setReady = (v: boolean): void => { ready = v; };
@@ -26,8 +30,20 @@ export async function buildApp(): Promise<FastifyInstance> {
     genReqId: () => randomUUID(),
   });
 
+  // Production serves the UI and /api from one host, so CORS stays off unless
+  // origins are listed. Local dev runs Next on :3000 against :8080.
+  const origins = (process.env['CORS_ORIGINS'] ?? '').split(',').map((o) => o.trim()).filter(Boolean);
+  if (origins.length > 0) {
+    await app.register(cors, { origin: origins, credentials: false, maxAge: 600 });
+  }
+
+  const max = Number(process.env['RATE_LIMIT_MAX'] ?? 100);
+  const authMax = Number(process.env['AUTH_RATE_LIMIT_MAX'] ?? 20);
   await app.register(rateLimit, {
-    max: Number(process.env['RATE_LIMIT_MAX'] ?? 100),
+    // Credential endpoints get their own, much smaller bucket: guessing
+    // passwords should be slow even when the general limit is generous.
+    keyGenerator: (req) => (isCredentialRoute(req.method, req.url) ? `${req.ip}:auth` : req.ip),
+    max: (_req, key) => (key.endsWith(':auth') ? authMax : max),
     timeWindow: process.env['RATE_LIMIT_WINDOW'] ?? '1 minute',
     // In-memory: each replica limits independently, so the effective limit is
     // max x replicas. Redis-backed is the fix when that matters.
@@ -64,10 +80,14 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   app.all('/api/*', async (req, reply) => {
-    const rule = matchRoute(req.url.split('?')[0] ?? '');
+    const rule = matchRoute(req.url.split('?')[0] ?? '', req.method);
     if (!rule) return reply.code(404).send({ error: 'NotFound' });
 
     const headers: Record<string, string> = { 'x-trace-id': String(req.id) };
+    // Proves to a backend that the request came through here. Backends reject
+    // identity headers without it, so reaching one directly buys nothing.
+    const internal = process.env['INTERNAL_TOKEN'];
+    if (internal) headers['x-internal-token'] = internal;
 
     if (rule.roles !== 'public') {
       let identity;
@@ -82,6 +102,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       headers['x-user-id'] = identity.userId;
       headers['x-user-email'] = identity.email;
       headers['x-user-role'] = identity.role;
+      // Header values must be ASCII-safe; names can carry anything.
+      if (identity.name) headers['x-user-name'] = encodeURIComponent(identity.name);
     }
 
     const started = process.hrtime.bigint();
@@ -96,6 +118,12 @@ export async function buildApp(): Promise<FastifyInstance> {
         // Strip Authorization: backends must trust the gateway's verdict, not
         // re-verify, and forwarding the token widens where it can leak.
         const { authorization: _a, ...rest } = existing as Record<string, string>;
+        // Identity is ours to assert, never the client's. Without this a caller
+        // could send x-user-id on a PUBLIC route (no verification happens there,
+        // so nothing overwrote it) and the backend would believe it.
+        for (const h of Object.keys(rest)) {
+          if (h.toLowerCase().startsWith('x-user-') || h.toLowerCase() === 'x-internal-token') delete rest[h];
+        }
         return { ...rest, ...headers };
       },
       onResponse: (_request, proxyReply, upstream) => {
@@ -109,6 +137,7 @@ export async function buildApp(): Promise<FastifyInstance> {
         // Fastify serialise {statusCode, headers, stream} as the body. The
         // status still looks right - reply-from applied it before calling this
         // - so every response arrives with a correct code and a useless body.
+        // Piping the stream also keeps SSE responses flowing chunk by chunk.
         void proxyReply.send(upstream.stream);
       },
     });

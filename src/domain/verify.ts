@@ -7,6 +7,8 @@ export interface Identity {
   userId: string;
   email: string;
   role: string;
+  // Display only; tokens minted before the claim existed simply lack it.
+  name?: string;
 }
 
 export class UnauthorizedError extends Error {
@@ -68,7 +70,8 @@ export async function verifyToken(authorization: string | undefined): Promise<Id
   const role = asString(payload['role']);
   if (!userId || !email || !role) throw new UnauthorizedError('Token is missing required claims');
 
-  return { userId, email, role };
+  const name = asString(payload['name']);
+  return { userId, email, role, ...(name ? { name } : {}) };
 }
 
 export function requireRole(identity: Identity, allowed: readonly string[]): void {
